@@ -1,0 +1,99 @@
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  color: #1f1f1f;
+  background-color: #f2f2f2;
+  font-size: 16px;
+  padding: 8px;
+}
+
+button {
+  background: #333;
+  color: white;
+  border-radius: 8px;
+  border: none;
+  min-width: 100px;
+  padding: 8px;
+  margin: 16px 0;
+  cursor: pointer;
+}
+
+button.primary {
+  background: #333;
+  color: white;
+}
+
+button.secondary {
+  background: #ccc;
+  color: black;
+}
+
+button[disabled] {
+  background: #ddd;
+  color: #aaa;
+}
+
+/* Spinner animation */
+.spinner {
+  width: 30px;
+  height: 30px;
+  border: 4px solid rgba(0, 0, 0, 0.1);
+  border-left-color: #007bff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+[hidden] {
+  display: none;
+}
+
+.place-card {
+  border: 1px solid #ddd;
+  padding: 10px;
+  margin: 10px 0;
+  border-radius: 5px;
+  background: #f9f9f9;
+  transition: 0.3s;
+}
+
+.place-card--selected {
+  background: #d4edda;
+  border-color: #28a745;
+}
+
+.place-card__name {
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+.place-card__class,
+.place-card__description,
+.place-card__address,
+.place-card__coords {
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.place-card__button {
+  margin-top: 10px;
+  padding: 5px 10px;
+  border: none;
+  cursor: pointer;
+  background: #007bff;
+  color: white;
+  border-radius: 3px;
+}
+
+.place-card__button:hover {
+  background: #0056b3;
+}

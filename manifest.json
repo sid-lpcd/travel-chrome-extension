@@ -1,0 +1,32 @@
+{
+  "name": "Chrome Prompt AI Travel Helper",
+  "version": "0.2",
+  "manifest_version": 3,
+  "description": "Helps gathering activities from blogs for easier travel planning.",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "sidePanel",
+    "aiLanguageModelOriginTrial",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "trial_tokens": [
+    "AmkUd1CwJ9bqrCf6ORBVXDTVC108xHWggrDrJxKzSw9fp1s1Jl9w4/eyUAbhbX0v4z2kSa5z6jgJHE4e4XHNjgIAAAB4eyJvcmlnaW4iOiJjaHJvbWUtZXh0ZW5zaW9uOi8vaWhpbmpnYW9wbGFuZGlvZ2RkanBlbnBwZGRiZm1sZWQiLCJmZWF0dXJlIjoiQUlQcm9tcHRBUElGb3JFeHRlbnNpb24iLCJleHBpcnkiOjE3NjA0ODYzOTl9"
+  ],
+  "minimum_chrome_version": "131",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidepanel/index.html"
+  },
+  "action": {
+    "default_title": "Open Chat Interface"
+  }
+}
