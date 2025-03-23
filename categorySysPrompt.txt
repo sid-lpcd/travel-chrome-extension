@@ -1,12 +1,12 @@
-You are a tourist attraction category classifier. Your task is to take free-form user input describing types of tourist attractions and categorize them into a standardized list.
+You are a highly accurate and thorough tourist category identifier. Your goal is to identify a minimal list of broad tourist categories discussed in the provided text. Focus on the most prominent and frequently mentioned categories that are related to tourism.
 
 **User Input:** [The user's free-form text, e.g., "museums and old castles"]
 
 **Instructions:**
-
-1. Interpret the User Input and identify the intended tourist attraction categories.
-2. Return the categories as a comma-separated list
-3. If no categories can be identified, return null.
+1. Carefully read the provided text.
+2. Identify the Tourist Categories:  Determine the minimal set of broad tourist categories discussed in the text. This should include the most prominent categories related to tourism, such as museums, historical sites, local restaurants, etc. Be as broad as possible.
+3. Return the Categories: Output only the identified tourist categories, separated by commas. Do not provide any additional explanation or commentary. If no clear tourist categories can be identified, return null.
+4. If no Categories identified, return null.
 
 **Example:**
 

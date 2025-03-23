@@ -26,10 +26,17 @@ let systemPrompt;
 
 let alltext = "";
 let locationText = "";
-let categorizedUserInput = "";
+let location = {
+  name: null,
+  lat: null,
+  lon: null,
+  minLat: null,
+  maxLat: null,
+  minLon: null,
+  maxLon: null,
+};
 
-let activities = null;
-let location = null;
+const earthRadius = 6371; // Earth radius in km
 
 async function loadFile(filePath) {
   try {
@@ -45,12 +52,47 @@ async function loadFile(filePath) {
   }
 }
 
-async function runPrompt(type, prompt, retry = true) {
+async function getCoordinates() {
+  if (!location || !location.name) {
+    console.error("Location name not provided.");
+    return null;
+  }
+
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+    location.name
+  )}`;
+
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+    if (data.length > 0) {
+      location.lat = parseFloat(data[0].lat);
+      location.lon = parseFloat(data[0].lon);
+      const latDiff = (100 / earthRadius) * (180 / Math.PI);
+      const lonDiff =
+        ((100 / earthRadius) * (180 / Math.PI)) /
+        Math.cos((parseFloat(data[0].lat) * Math.PI) / 180);
+      location.minLat = parseFloat(data[0].lat) - latDiff;
+      location.maxLat = parseFloat(data[0].lat) + latDiff;
+      location.minLon = parseFloat(data[0].lon) - lonDiff;
+      location.maxLon = parseFloat(data[0].lon) + lonDiff;
+    } else {
+      console.error(`No coordinates found for ${location}`);
+    }
+  } catch (error) {
+    console.error(`Error fetching coordinates for ${location}:`, error);
+  }
+}
+
+async function runPrompt(type, prompt, retries = 5) {
   try {
     if (!session) {
       await initDefaults();
       console.log("All Models Loaded");
     }
+    console.log(`Running ${type} model...`);
+    console.log("Prompt:", prompt.slice(0, 100) + "...");
+
     let response = null;
     switch (type) {
       case "main":
@@ -68,7 +110,9 @@ async function runPrompt(type, prompt, retry = true) {
         break;
       case "category":
         console.log("Category model is thinking...");
-        response = await session.input.prompt(prompt);
+        response = await session.input.prompt(
+          "Create categories for:" + prompt
+        );
         console.log("Category model replied");
         break;
 
@@ -77,18 +121,22 @@ async function runPrompt(type, prompt, retry = true) {
         return;
     }
     return response;
-  } catch (e) {
-    if (retry) {
-      console.log("Retrying...");
-      return runPrompt(type, prompt, false);
+  } catch (error) {
+    if (error.name === "NotSupportedError" && retries > 0) {
+      console.log(`Retrying... Attempts left: ${retries - 1}`);
+      await runPrompt(type, prompt, retries - 1); // Retry with one less attempt
+    } else {
+      console.error("Error classifying categories:", error);
+      hide(elementLoading);
+      showError(error);
     }
-    throw e;
   }
 }
 
 async function reset() {
   if (session) {
-    session.destroy();
+    session.main?.destroy();
+    session.input?.destroy();
   }
   session = null;
 }
@@ -107,20 +155,16 @@ async function loadModels() {
     });
   }
   if (!session.location) {
-    console.log("Location Model loading...");
     session.location = await ai.languageModel.create({
       ...params,
       systemPrompt: locationPrompt,
     });
-    console.log("Location model is ready");
   }
   if (!session.input) {
-    console.log("Input Model loading...");
     session.input = await ai.languageModel.create({
       ...params,
       systemPrompt: categoryPrompt,
     });
-    console.log("Input model is ready");
   }
 
   if (!alltext && !locationText) {
@@ -133,8 +177,8 @@ async function loadModels() {
   //   console.log(activities);
   // }
   if (locationText) {
-    console.log("Getting location ready...");
-    location = await runPrompt("location", locationText);
+    location.name = await runPrompt("location", locationText);
+    await getCoordinates();
     console.log(location);
   }
 }
@@ -202,7 +246,8 @@ function treatResponse(response) {
     try {
       response = JSON.parse(response);
     } catch (error) {
-      console.warn("Response is not valid JSON, returning cleaned string.");
+      console.warn("Response is not valid JSON, returning false");
+      return false;
     }
   }
 
@@ -241,20 +286,27 @@ function createPlaceCard(place) {
 }
 
 async function searchPlace(place) {
-  const url = `https://nominatim.openstreetmap.org/search?addressdetails=1&format=json&limit=1&q=${encodeURIComponent(
+  let url = `https://nominatim.openstreetmap.org/search?addressdetails=1&format=json&limit=1&q=${encodeURIComponent(
     place
   )}`;
 
+  if (location?.lat && location?.lon) {
+    url = `https://nominatim.openstreetmap.org/search?addressdetails=1&format=json&limit=1&q=${encodeURIComponent(
+      place
+    )}&viewbox=${location.minLon},${location.minLat},${location.maxLon},${
+      location.maxLat
+    }&bounded=1`;
+  }
+  console.log(url);
   try {
     const response = await fetch(url);
-    console.log(response);
     const data = await response.json();
     console.log(data);
 
     if (data.length > 0) {
       return createPlaceCard({
         id: data[0].place_id,
-        name: data[0].name,
+        name: data[0].name || place,
         address: data[0].address
           ? (data[0].address.city ? `${data[0].address.city}, ` : "") +
             (data[0].address.postcode ? `${data[0].address.postcode}, ` : "") +
@@ -275,6 +327,7 @@ async function searchPlace(place) {
 
 async function processPlaces(response) {
   const results = [];
+  showResponse("");
   for (const [category, places] of Object.entries(response)) {
     if (places.length === 0) continue;
 
@@ -295,7 +348,7 @@ async function processPlaces(response) {
       if (details) {
         section.appendChild(details);
         categoryData.places.push(details);
-        console.log(`Found: ${details.name}`, details);
+        console.log(`Found: ${place}`);
       } else {
         console.log(`Not Found: ${place}`);
       }
@@ -305,6 +358,60 @@ async function processPlaces(response) {
     results.push(categoryData);
   }
   return results;
+}
+
+async function classifyAndProcess(categorizedUserInput, retries = 3) {
+  if (!alltext) {
+    sendMessageToActiveTab();
+  }
+
+  // Run the main prompt
+  const response = await runPrompt(
+    "main",
+    `You must return a valid JSON object. ${
+      !categorizedUserInput
+        ? `Find activities in: ${alltext}. `
+        : `Keep these categories in mind: ${categorizedUserInput}. Find the activities belonging to the categories in: ${alltext}. Make sure the categories are the following: ${categorizedUserInput}. `
+    }Return ONLY a JSON object with properly formatted keys and values, nothing else.`
+  );
+  const treatedResponse = treatResponse(response);
+
+  if (!treatedResponse) {
+    if (retries > 0) {
+      console.log(
+        `Invalid JSON response. Retrying... Attempts left: ${retries - 1}`
+      );
+      await classifyAndProcess(categorizedUserInput, retries - 1);
+      return;
+    } else {
+      throw new Error("Maximum retries reached. Response is not valid JSON.");
+    }
+  }
+
+  console.log(treatedResponse);
+  await processPlaces(treatedResponse);
+}
+
+async function categorizeInput(userInput, retries = 3) {
+  let categorizedUserInput = null;
+
+  console.log(userInput);
+  const categoryResponse = await runPrompt("category", userInput);
+  if (!categoryResponse) {
+    clear(elementError);
+    showResponse("No categories identified. Finding all activities...");
+  } else {
+    categorizedUserInput = categoryResponse?.trim();
+    showResponse(
+      "Looking for activities in the following categories: " +
+        categorizedUserInput
+    );
+  }
+  show(elementLoading);
+
+  console.log(categorizedUserInput);
+
+  await classifyAndProcess(categorizedUserInput);
 }
 
 initDefaults();
@@ -366,50 +473,27 @@ inputPrompt.addEventListener("input", () => {
 });
 
 buttonReset.addEventListener("click", () => {
+  inputPrompt.value = "";
+  clear(elementResponse);
+  clear(elementResponseList);
   hide(elementLoading);
   hide(elementError);
   hide(elementResponse);
+  hide(elementResponseList);
   reset();
   buttonReset.setAttribute("disabled", "");
 });
 
 buttonPrompt.addEventListener("click", async () => {
   const userInput = inputPrompt.value.trim();
-
+  clear(elementResponse);
+  clear(elementResponseList);
   showLoading();
-  try {
-    const categoryResponse = await runPrompt("category", userInput);
-    console.log(categoryResponse);
-    const categorizedUserInput = categoryResponse?.trim();
-
-    if (!categorizedUserInput) {
-      showError("No categories identified. Finding all activities...");
-    } else {
-      await session.main.prompt(
-        "Keep these categories in mind: " + categorizedUserInput
-      );
-      showResponse(
-        "Looking for activities in the following categories: " +
-          categorizedUserInput
-      );
-    }
-    console.log(categorizedUserInput);
-
-    if (!alltext) {
-      sendMessageToActiveTab();
-    }
-
-    // Run the main prompt
-    const response = await runPrompt("main", alltext);
-
-    const treatedResponse = treatResponse(response);
-    console.log(treatedResponse);
-    await processPlaces(treatedResponse);
-  } catch (categoryError) {
-    console.error("Error classifying categories:", categoryError);
-    hide(elementLoading);
-    showError(e);
+  if (userInput === "" || userInput === null || userInput === "all") {
+    await classifyAndProcess();
+    return;
   }
+  await categorizeInput(userInput);
 });
 
 function showLoading() {
@@ -438,4 +522,8 @@ function show(element) {
 
 function hide(element) {
   element.setAttribute("hidden", "");
+}
+
+function clear(element) {
+  element.innerHTML = "";
 }
