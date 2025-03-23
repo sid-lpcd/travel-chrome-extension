@@ -9,16 +9,27 @@ const elementResponseList = document.body.querySelector("#list-reponse");
 const elementLoading = document.body.querySelector("#loading");
 const elementError = document.body.querySelector("#error");
 
-const MAX_CHARS = 2048;
 let capabilities;
+
 let session = {
   main: null,
   location: null,
   input: null,
 };
 
+let categoryPrompt;
+let locationPrompt;
+let systemPrompt;
+
+//let arrayResponseTemplate;
+//let responseJSONSchemaObj;
+
 let alltext = "";
+let locationText = "";
 let categorizedUserInput = "";
+
+let activities = null;
+let location = null;
 
 async function loadFile(filePath) {
   try {
@@ -34,45 +45,55 @@ async function loadFile(filePath) {
   }
 }
 
-async function runPrompt(sessionModel, prompt, retry = true) {
+async function runPrompt(type, prompt, retry = true) {
   try {
-    if (!session[sessionModel] && sessionModel != "main") {
+    if (!session) {
       await initDefaults();
-      console.log("Model Loaded");
+      console.log("All Models Loaded");
     }
-    if (sessionModel === "main") {
-      const response = await session[sessionModel].prompt(prompt);
-      reset(sessionModel);
-      return response;
+    let response = null;
+    switch (type) {
+      case "main":
+        !alltext ?? sendMessageToActiveTab();
+        response = await session.main.prompt(prompt);
+        // response = await session.prompt(prompt, {
+        //   responseJSONSchema: responseJSONSchemaObj,
+        // });
+        break;
+      case "location":
+        response = await session.location.prompt(prompt);
+        // response = await session.prompt(prompt, {
+        //   responseJSONSchema: arrayResponseTemplate,
+        // });
+        break;
+      case "category":
+        console.log("Category model is thinking...");
+        response = await session.input.prompt(prompt);
+        console.log("Category model replied");
+        break;
+
+      default:
+        showError("Invalid model type.");
+        return;
     }
-    return await session[sessionModel].prompt(prompt);
+    return response;
   } catch (e) {
     if (retry) {
       console.log("Retrying...");
-      reset(sessionModel);
-      return runPrompt(sessionModel, prompt, false);
+      return runPrompt(type, prompt, false);
     }
     throw e;
   }
 }
 
-async function reset(sessionModel) {
-  if (session[sessionModel]) {
-    session[sessionModel].destroy();
+async function reset() {
+  if (session) {
+    session.destroy();
   }
-  session[sessionModel] = null;
+  session = null;
 }
 
-async function mainLoadModel(categories) {
-  let systemPrompt = await loadFile("systemPrompt.txt");
-
-  if (!categories) {
-    showError("No categories found.");
-    return;
-  }
-  const modifiedPrompt = systemPrompt.replaceAll("{{userInput}}", categories);
-  console.log(modifiedPrompt);
-
+async function loadModels() {
   const params = {
     initialPrompts: [],
     temperature: capabilities.defaultTemperature,
@@ -80,32 +101,18 @@ async function mainLoadModel(categories) {
   };
 
   if (!session.main) {
-    console.log("Main Model loading...");
     session.main = await ai.languageModel.create({
       ...params,
-      systemPrompt: modifiedPrompt,
+      systemPrompt: systemPrompt,
     });
-    console.log("Model is ready");
   }
-}
-
-async function loadModels() {
-  let categoryPrompt = await loadFile("categorySysPrompt.txt");
-  let locationPrompt = await loadFile("mainLocationSysPrompt.txt");
-
-  const params = {
-    initialPrompts: [],
-    temperature: capabilities.defaultTemperature,
-    topK: capabilities.defaultTopK,
-  };
-
   if (!session.location) {
     console.log("Location Model loading...");
     session.location = await ai.languageModel.create({
       ...params,
       systemPrompt: locationPrompt,
     });
-    console.log("Model is ready");
+    console.log("Location model is ready");
   }
   if (!session.input) {
     console.log("Input Model loading...");
@@ -113,7 +120,22 @@ async function loadModels() {
       ...params,
       systemPrompt: categoryPrompt,
     });
-    console.log("Model is ready");
+    console.log("Input model is ready");
+  }
+
+  if (!alltext && !locationText) {
+    await sendMessageToActiveTab();
+  }
+
+  // if (alltext) {
+  //   console.log("Getting activities ready...");
+  //   activities = await runPrompt("main", alltext);
+  //   console.log(activities);
+  // }
+  if (locationText) {
+    console.log("Getting location ready...");
+    location = await runPrompt("location", locationText);
+    console.log(location);
   }
 }
 
@@ -123,31 +145,76 @@ async function initDefaults() {
     return;
   }
   capabilities = await ai.languageModel.capabilities();
+
+  if (capabilities.available === "after-download") {
+    console.log("Model is not yet available, downloading...");
+    await ai.languageModel.create({
+      monitor(m) {
+        m.addEventListener("downloadprogress", (e) => {
+          console.log(`Downloaded ${e.loaded * 100}%`);
+        });
+      },
+    });
+    capabilities = await ai.languageModel.capabilities();
+  }
   if (capabilities.available !== "readily") {
     showResponse(
       `Model not yet available (current state: "${capabilities.available}")`
     );
     return;
   }
+  console.log("Getting system prompts ready...");
+  categoryPrompt = await loadFile("categorySysPrompt.txt");
+  locationPrompt = await loadFile("mainLocationSysPrompt.txt");
+  systemPrompt = await loadFile("systemPrompt.txt");
+
+  // arrayResponseTemplate = new ai.AILanguageModelResponseSchema({
+  //   type: "array",
+  //   items: {
+  //     type: "string",
+  //   },
+  // });
+  // responseJSONSchemaObj = new ai.AILanguageModelResponseSchema({
+  //   type: "object",
+  //   properties: {
+  //     landmarks: { type: "array", items: { type: "string" } },
+  //     monuments: { type: "array", items: { type: "string" } },
+  //     museums: { type: "array", items: { type: "string" } },
+  //     parks: { type: "array", items: { type: "string" } },
+  //     historical_sites: { type: "array", items: { type: "string" } },
+  //     scenic_viewpoints: { type: "array", items: { type: "string" } },
+  //     local_restaurants: { type: "array", items: { type: "string" } },
+  //   },
+  //   additionalProperties: false,
+  // });
+
+  // console.log("Response schema:", responseJSONSchemaObj);
+
   await loadModels(capabilities);
 }
 
-function extractDataFromResponse(response) {
-  const listItems = [];
-  const regexPatterns = [
-    /- (.+?)(?=\n|$)/g, // Matches list items starting with '- '
-    /\* (.+?)(?=\n|$)/g, // Matches list items starting with '* '
-    /\d+\. (.+?)(?=\n|$)/g, // Matches numbered list items
-  ];
+function treatResponse(response) {
+  if (!response) return null;
 
-  regexPatterns.forEach((pattern) => {
-    let match;
-    while ((match = pattern.exec(response)) !== null) {
-      listItems.push(match[1].trim());
+  if (typeof response === "string") {
+    response = response.replace(/```json|```/g, "").trim();
+
+    try {
+      response = JSON.parse(response);
+    } catch (error) {
+      console.warn("Response is not valid JSON, returning cleaned string.");
     }
-  });
+  }
 
-  return listItems;
+  if (typeof response === "object" && response !== null) {
+    for (const key in response) {
+      if (typeof response[key] === "string") {
+        response[key] = response[key].replace(/<\/?[^>]+(>|$)/g, "").trim();
+      }
+    }
+  }
+
+  return response;
 }
 
 function createPlaceCard(place) {
@@ -170,7 +237,7 @@ function createPlaceCard(place) {
     button.textContent = place.selected ? "Deselect" : "Select";
   });
 
-  elementResponseList.appendChild(card);
+  return card;
 }
 
 async function searchPlace(place) {
@@ -185,7 +252,7 @@ async function searchPlace(place) {
     console.log(data);
 
     if (data.length > 0) {
-      createPlaceCard({
+      return createPlaceCard({
         id: data[0].place_id,
         name: data[0].name,
         address: data[0].address
@@ -206,42 +273,89 @@ async function searchPlace(place) {
   return null;
 }
 
-async function processPlaces(places) {
+async function processPlaces(response) {
   const results = [];
-  for (const place of places) {
-    const details = await searchPlace(place);
-    if (details) {
-      results.push(details);
-      console.log(`Found: ${details.name}`, details);
-    } else {
-      console.log(`Not Found: ${place}`);
+  for (const [category, places] of Object.entries(response)) {
+    if (places.length === 0) continue;
+
+    const title = category
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+
+    const section = document.createElement("section");
+    section.className = "category-title";
+    const titleElement = document.createElement("h3");
+    titleElement.innerText = title;
+    section.appendChild(titleElement);
+
+    const categoryData = { title, places: [] };
+
+    for (const place of places) {
+      const details = await searchPlace(place);
+      if (details) {
+        section.appendChild(details);
+        categoryData.places.push(details);
+        console.log(`Found: ${details.name}`, details);
+      } else {
+        console.log(`Not Found: ${place}`);
+      }
     }
+
+    elementResponseList.appendChild(section);
+    results.push(categoryData);
   }
   return results;
 }
 
 initDefaults();
 
-chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-  console.log("Sending Message");
-  chrome.tabs.sendMessage(
-    tabs[0].id,
-    { method: "getText" },
-    function (response) {
-      if (response && response.method === "getText") {
-        alltext = response.data;
+async function sendMessageToActiveTab(retries = 5, delay = 1000) {
+  if (retries <= 0) {
+    console.log("Max retries reached. Exiting.");
+    return;
+  }
+
+  const tabs = await new Promise((resolve, reject) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError));
       } else {
-        console.error("Error getting text:", chrome.runtime.lastError);
+        resolve(tabs);
+      }
+    });
+  });
+
+  if (!tabs.length) {
+    console.log("No active tab found.");
+    return;
+  }
+
+  console.log("Sending Message");
+  const response = await new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(
+      tabs[0].id,
+      { method: "getText" },
+      function (response) {
         if (chrome.runtime.lastError) {
-          console.error(
-            "Last Error Message : ",
-            chrome.runtime.lastError.message
-          );
+          reject(new Error(chrome.runtime.lastError));
+        } else {
+          resolve(response);
         }
       }
-    }
-  );
-});
+    );
+  });
+
+  if (response && response.method === "getText") {
+    alltext = response.data;
+    locationText = response.locationText;
+  } else {
+    console.log(`Retrying... (${retries - 1} retries left)`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    await sendMessageToActiveTab(retries - 1, delay);
+  }
+}
+
+sendMessageToActiveTab();
 
 inputPrompt.addEventListener("input", () => {
   if (inputPrompt.value.trim() && session) {
@@ -264,51 +378,33 @@ buttonPrompt.addEventListener("click", async () => {
 
   showLoading();
   try {
-    console.log(userInput);
-    const categoryResponse = await runPrompt("input", userInput);
+    const categoryResponse = await runPrompt("category", userInput);
+    console.log(categoryResponse);
+    const categorizedUserInput = categoryResponse?.trim();
 
-    categorizedUserInput = categoryResponse.trim();
-
-    if (categorizedUserInput === "No categories found.") {
-      showError("No valid categories found in your input.");
-      hide(elementLoading);
-      return;
+    if (!categorizedUserInput) {
+      showError("No categories identified. Finding all activities...");
+    } else {
+      await session.main.prompt(
+        "Keep these categories in mind: " + categorizedUserInput
+      );
+      showResponse(
+        "Looking for activities in the following categories: " +
+          categorizedUserInput
+      );
     }
     console.log(categorizedUserInput);
-    await mainLoadModel(categorizedUserInput);
-    let response = "";
-    if (!alltext) {
-      chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-        chrome.tabs.sendMessage(
-          tabs[0].id,
-          { method: "getText" },
-          async function (response) {
-            if (response && response.method === "getText") {
-              alltext = response.data;
 
-              response = await runPrompt(session.main, alltext);
-            } else {
-              console.error("Error getting text:", chrome.runtime.lastError);
-              if (chrome.runtime.lastError) {
-                console.error(
-                  "Last Error Message : ",
-                  chrome.runtime.lastError.message
-                );
-              }
-              hide(elementLoading);
-              showError("Error getting text from the page.");
-            }
-          }
-        );
-      });
-    } else {
-      // Run the main prompt
-      response = await runPrompt("main", alltext);
+    if (!alltext) {
+      sendMessageToActiveTab();
     }
-    const listItems = extractDataFromResponse(response);
-    console.log(listItems);
-    await processPlaces(listItems);
-    showResponse(response);
+
+    // Run the main prompt
+    const response = await runPrompt("main", alltext);
+
+    const treatedResponse = treatResponse(response);
+    console.log(treatedResponse);
+    await processPlaces(treatedResponse);
   } catch (categoryError) {
     console.error("Error classifying categories:", categoryError);
     hide(elementLoading);

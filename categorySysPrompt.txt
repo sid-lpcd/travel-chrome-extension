@@ -5,17 +5,8 @@ You are a tourist attraction category classifier. Your task is to take free-form
 **Instructions:**
 
 1. Interpret the User Input and identify the intended tourist attraction categories.
-2. Return the categories as a comma-separated list, using the following standardized categories (or more specific subcategories if applicable):
-
-* Landmarks
-* Monuments
-* Museums
-* Parks
-* Historical Sites
-* Scenic Viewpoints
-* Local Restaurants
-
-3.  If a category in the User Input doesn't clearly match any of the standardized categories, do *not* include it in the output.  Prioritize accuracy over inclusiveness.  If no categories are identified, return "No categories found."
+2. Return the categories as a comma-separated list
+3. If no categories can be identified, return null.
 
 **Example:**
 
@@ -27,9 +18,6 @@ Output: Local Restaurants
 
 User Input:  beautiful places to take pictures
 Output: Scenic Viewpoints
-
-User Input:  zoos and aquariums
-Output: No categories found.  (Zoos and aquariums are not in the list)
 
 User Input:  art museums, ancient ruins, national parks, Italian restaurants, and gardens
 Output: Museums, Historical Sites, Parks, Local Restaurants
