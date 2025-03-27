@@ -19,7 +19,7 @@ Activity Search WebML is a web-based application that leverages Google's WebAI m
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/your-username/activity-search-webML.git
+git clone https://github.com/sid-lpcd/activity-search-webML.git
 ```
 
 2. Navigate to the project directory:
